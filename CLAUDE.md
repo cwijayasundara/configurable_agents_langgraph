@@ -6,15 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Installation & Setup
 ```bash
+# Automated setup (recommended)
+python setup.py
+
+# Or manual setup
 pip install -r requirements.txt
+cp env.example .env
+# Edit .env file and add your API keys
 ```
 
 Required environment variables:
 ```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit .env file and add your API keys
 OPENAI_API_KEY=your-openai-api-key-here
 ANTHROPIC_API_KEY=your-anthropic-api-key-here
 GOOGLE_API_KEY=your-google-api-key-here
@@ -23,22 +25,7 @@ GROQ_API_KEY=your-groq-api-key-here
 
 ### Testing
 ```bash
-# Run all tests
-pytest tests/
-
-# Run specific test file with verbose output
-pytest tests/test_config_loader.py -v
-
-# Run with coverage reporting
-pytest tests/ --cov=src --cov-report=html
-
-# Run single test method
-pytest tests/test_config_loader.py::TestConfigLoader::test_load_valid_config -v
-```
-
-### Running Examples
-```bash
-# Run comprehensive test suite
+# Run all tests with comprehensive test runner
 python run_tests.py --all
 
 # Run specific test categories
@@ -47,8 +34,25 @@ python run_tests.py --integration  # Integration tests
 python run_tests.py --lint      # Code quality checks
 python run_tests.py --quick     # Quick smoke test
 
+# Traditional pytest commands
+pytest tests/
+pytest tests/test_config_loader.py -v
+pytest tests/ --cov=src --cov-report=html
+
+# Run single test method
+pytest tests/test_config_loader.py::TestConfigLoader::test_load_valid_config -v
+```
+
+### Running Examples
+```bash
 # Run usage examples (requires API keys)
 python examples/usage_examples.py
+
+# Launch web UI for configuration
+python run_web_ui.py
+
+# Launch hierarchical agents web UI
+python run_hierarchical_ui.py
 
 # Test specific agent configuration
 python -c "
@@ -60,89 +64,98 @@ print(agent.run('test query'))
 
 ## Architecture Overview
 
-This is a **template-driven configurable agent system** built on LangGraph's prebuilt ReAct agents. The core philosophy is that agents are entirely configured through YAML files without code changes.
+This is a **configuration-driven multi-agent system** supporting both single ReAct agents and hierarchical agent teams. All behavior is defined through YAML files with two main architectural patterns:
 
-### Key Architectural Concepts
+### Single Agent Architecture (ReAct Pattern)
 
-**Configuration-First Design**: All agent behavior (LLM, prompts, tools, memory) is defined in YAML configuration files. The system uses LangGraph's optimized `create_react_agent()` for the core reasoning loop.
+**Configuration-First Design**: Agent behavior (LLM, prompts, tools, memory) defined in YAML. Uses LangGraph's optimized `create_react_agent()` for reasoning loops.
 
 **Component Initialization Flow**:
-1. `ConfigurableAgent` loads YAML → validates with Pydantic models
-2. `_setup_llm()` → creates LLM instance based on provider (OpenAI/Anthropic)
+1. `ConfigurableAgent` loads YAML → validates with Pydantic models  
+2. `_setup_llm()` → creates LLM instance (OpenAI/Anthropic/Google/Groq)
 3. `_setup_tools()` → registers built-in and custom tools via `ToolRegistry`
-4. `_setup_memory()` → initializes `MemoryManager` if enabled
+4. `_setup_memory()` → initializes `MemoryManager` with LangMem if enabled
 5. `_setup_graph()` → uses `create_react_agent()` with LLM and tools
 
-**ReAct Pattern**: Uses LangGraph's prebuilt ReAct (Reasoning + Acting) agent which follows the pattern of reasoning about the problem and taking actions with tools. This is more efficient than custom graph construction.
+**ReAct Pattern**: Reasoning → Acting → Observation → Final Answer cycle. More efficient than custom graph construction.
 
-**State Management**: The ReAct agent manages its own internal state with messages flowing through the reasoning loop. Memory integration happens at the input/output level.
+### Hierarchical Agent Architecture (Team Pattern)
+
+**Three-Tier Structure**: Coordinator → Supervisors → Workers with intelligent task routing and cross-team communication.
+
+**Advanced Routing**: Keyword-based, LLM-based, rule-based, capability-based, workload-based, and performance-based routing strategies.
+
+**Dynamic Management**: Runtime addition/removal of agents and teams with real-time performance monitoring.
 
 ### Core Components
 
-**src/core/configurable_agent.py** - Main orchestrator class that ties everything together. Entry point for creating agents from config files.
+**src/core/configurable_agent.py** - Main single agent orchestrator with ReAct pattern implementation
 
-**src/core/config_loader.py** - Pydantic models for YAML validation and configuration parsing. Handles environment variable resolution for API keys.
+**src/core/config_loader.py** - Pydantic models for YAML validation and environment variable resolution
 
-**src/memory/memory_manager.py** - LangMem integration supporting three memory types: semantic (facts), episodic (conversations), procedural (successful patterns). Includes cleanup based on retention policies.
+**src/hierarchical/hierarchical_agent.py** - Main hierarchical team coordinator with multi-tier management
 
-**src/optimization/prompt_optimizer.py** - A/B testing framework for prompts with automatic evolution based on performance metrics. Generates variants and tracks performance.
+**src/hierarchical/supervisor.py** - Team supervisor agents with task delegation capabilities
 
-**src/optimization/feedback_collector.py** - Collects automatic and user feedback for prompt optimization, including response time, token efficiency, and success rates.
+**src/hierarchical/worker_agent.py** - Specialized worker agents with specific capabilities
 
-**src/tools/tool_registry.py** - Manages built-in tools (web_search, calculator, file_reader, file_writer, code_executor) and custom tool registration.
+**src/memory/memory_manager.py** - LangMem integration (semantic/episodic/procedural memory) with retention policies
 
-### Configuration Structure
+**src/tools/tool_registry.py** - Built-in tools (web_search, calculator, file_reader, file_writer, code_executor) and custom tool registration
 
-Agent configurations have simplified sections for ReAct pattern:
+**src/optimization/prompt_optimizer.py** - A/B testing framework with automatic prompt evolution
 
-- **agent**: Metadata (name, description, version)
-- **llm**: Provider, model, parameters, API key env var
-- **prompts**: Templates with variable substitution (primarily system_prompt)
-- **tools**: Lists of built-in tools and custom tool definitions
-- **memory**: LangMem configuration for semantic/episodic/procedural memory
-- **react**: Simple ReAct configuration (max_iterations, recursion_limit)
-- **optimization**: Prompt optimization and performance tracking settings
-- **runtime**: Execution limits and debug settings
+### Configuration Patterns
 
-### ReAct Agent Pattern
+**Single Agent Configuration**:
+```yaml
+agent: {name, description, version}
+llm: {provider, model, parameters}
+prompts: {system_prompt with variables}
+tools: {built_in list, custom definitions}
+memory: {semantic/episodic/procedural config}
+react: {max_iterations, recursion_limit}
+```
 
-The ReAct (Reasoning + Acting) pattern simplifies agent behavior:
+**Hierarchical Team Configuration**:
+```yaml
+coordinator: {routing_strategy, communication_config}
+teams: {supervisor definitions with specializations}
+workers: {individual agent configurations}
+performance: {monitoring, alerts, analytics}
+```
 
-- **Reasoning**: The agent thinks about the problem step by step
-- **Acting**: The agent uses tools when needed to gather information or perform actions
-- **Observation**: The agent processes tool results and continues reasoning
-- **Final Answer**: The agent provides a comprehensive response
+### Web UI Integration
 
-This eliminates the need for complex graph configurations while providing robust reasoning capabilities.
+**Single Agent UI** (`run_web_ui.py`): Form-based configuration with real-time YAML preview, template loading, and agent testing
 
-### Memory Architecture
+**Hierarchical UI** (`run_hierarchical_ui.py`): Team management interface with performance dashboards and routing visualization
 
-Three-tier memory system:
-- **Semantic**: Key facts extracted from interactions (simple NLP patterns)
-- **Episodic**: Full conversation history with cleanup policies
-- **Procedural**: Successful interaction patterns with usage counters
+### Testing Architecture
 
-Memory operations are integrated into graph nodes and can be configured per-agent.
+**Comprehensive Test Runner** (`run_tests.py`): 
+- Unit tests for individual components
+- Integration tests for full agent workflows  
+- Lint tests for code quality
+- Quick smoke tests for basic functionality
 
-### Testing Patterns
-
-Tests are organized by component with fixtures for configurations. Key testing patterns:
-- Mock API keys via environment variables in tests
-- Use temporary files for YAML config testing
-- Pydantic validation testing for config edge cases
-- Tool registry testing with custom tool registration
-- Memory manager testing with different memory types enabled/disabled
+**Test Patterns**:
+- Mock API keys via environment variables
+- Temporary YAML files for configuration testing
+- Pydantic validation edge case testing
+- Tool registry custom tool testing
+- Memory manager multi-type testing
 
 ### Common Debugging
 
-When agents fail to initialize, check:
-1. API key environment variables are set
-2. YAML configuration validates against Pydantic models
-3. Custom tools can be imported from specified module paths
-4. Graph configuration has valid entry point and connected nodes
+**Agent Initialization Issues**:
+1. Check API key environment variables are set
+2. Validate YAML against Pydantic models  
+3. Verify custom tool import paths
+4. Enable `debug_mode: true` for detailed logging
 
-The `debug_mode: true` runtime setting provides additional logging during graph execution.
-
-**ReAct Agent Integration**: The system uses LangGraph's prebuilt `create_react_agent()` which handles state management internally. The ReAct pattern provides a more reliable and optimized approach than custom graph construction.
-
-**System Prompt Integration**: System prompts are prepended to the message list when invoking the ReAct agent, ensuring proper context setting without complex state management.
+**Hierarchical Team Issues**:
+1. Check coordinator routing configuration
+2. Verify team and worker connectivity
+3. Monitor performance dashboard for bottlenecks
+4. Review task delegation logs

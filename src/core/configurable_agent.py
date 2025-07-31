@@ -4,10 +4,7 @@ Main configurable agent class that ties everything together.
 import os
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
+from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.runnables import Runnable
 
@@ -43,7 +40,7 @@ class ConfigurableAgent:
         self._setup_graph()
     
     def _setup_llm(self):
-        """Initialize the LLM based on configuration."""
+        """Initialize the LLM based on configuration using init_chat_model."""
         llm_config = self.config.llm
         
         # Get API key from environment
@@ -51,40 +48,40 @@ class ConfigurableAgent:
         if not api_key:
             raise ValueError(f"API key not found in environment variable: {llm_config.api_key_env}")
         
-        # Initialize LLM based on provider
-        if llm_config.provider.lower() == "openai":
-            self.llm = ChatOpenAI(
-                model=llm_config.model,
-                temperature=llm_config.temperature,
-                max_tokens=llm_config.max_tokens,
-                api_key=api_key,
-                base_url=llm_config.base_url
-            )
-        elif llm_config.provider.lower() == "anthropic":
-            self.llm = ChatAnthropic(
-                model=llm_config.model,
-                temperature=llm_config.temperature,
-                max_tokens=llm_config.max_tokens,
-                api_key=api_key,
-                base_url=llm_config.base_url
-            )
-        elif llm_config.provider.lower() == "gemini":
-            self.llm = ChatGoogleGenerativeAI(
-                model=llm_config.model,
-                temperature=llm_config.temperature,
-                max_output_tokens=llm_config.max_tokens,
-                api_key=api_key
-            )
-        elif llm_config.provider.lower() == "groq":
-            self.llm = ChatGroq(
-                model=llm_config.model,
-                temperature=llm_config.temperature,
-                max_tokens=llm_config.max_tokens,
-                api_key=api_key,
-                base_url=llm_config.base_url
-            )
-        else:
+        # Map provider names to init_chat_model format
+        provider_mapping = {
+            "openai": "openai",
+            "anthropic": "anthropic", 
+            "gemini": "google_vertexai",  # Google Gemini models
+            "groq": "groq"
+        }
+        
+        provider = provider_mapping.get(llm_config.provider.lower())
+        if not provider:
             raise ValueError(f"Unsupported LLM provider: {llm_config.provider}")
+        
+        # Prepare model name with provider prefix
+        model_name = f"{provider}:{llm_config.model}"
+        
+        # Prepare additional kwargs
+        llm_kwargs = {
+            "temperature": llm_config.temperature,
+            "max_tokens": llm_config.max_tokens,
+            "api_key": api_key
+        }
+        
+        # Add base_url if specified
+        if llm_config.base_url:
+            llm_kwargs["base_url"] = llm_config.base_url
+        
+        # Initialize LLM using init_chat_model
+        try:
+            self.llm = init_chat_model(
+                model=model_name,
+                **llm_kwargs
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to initialize LLM with model {model_name}: {str(e)}")
     
     def _setup_tools(self):
         """Setup tools from configuration."""
